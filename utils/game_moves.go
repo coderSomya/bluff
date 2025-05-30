@@ -47,3 +47,15 @@ func Check(game models.Game) bool{
 	return false
 }
 
+func MakeMove(game Game, playerId PlayerId, cards []Card) bool{
+	
+	var qty = len(cards)
+
+	for i := 0; i<qty; i++{
+		game.PlayedCards.append(cards[i])
+	}
+
+	game.LastPlayedQty = qty
+	game.LastPlayerId = playerId
+}
+
