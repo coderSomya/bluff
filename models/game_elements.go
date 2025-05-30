@@ -5,7 +5,9 @@ type Game struct {
     Players []Player
 	CurrentPlayerId int
 	PlayedCards []Card
-	CurrentMove Move
+	LastPlayerId int
+	LastPlayedQty int
+	MoveCard Card
 }
 
 type Player struct {
@@ -14,12 +16,6 @@ type Player struct {
 	Cards []Card
 }
 
-type Move struct {
-	MoveId string
-	LastPlayerId int
-	LastCard Card
-	Qty int
-}
 
 type Card struct {
 	Value Rank
