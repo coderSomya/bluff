@@ -10,8 +10,8 @@ func IsGameOver(game models.Game) bool{
 		return false
 	}
 
-	for player := range game.Players{
-		if len(player.Cards) == 0 {
+	for i := range len(game.Players){
+		if len(game.Players[i].Cards) == 0 {
 			return true
 		}
 	}
@@ -32,7 +32,7 @@ func Check(game models.Game) bool{
 		return false
 	}
 
-	if game.PlayedCards == 0 {
+	if len(game.PlayedCards) == 0 {
 		return false
 	}
 
@@ -47,15 +47,14 @@ func Check(game models.Game) bool{
 	return false
 }
 
-func MakeMove(game Game, playerId PlayerId, cards []Card) bool{
+func MakeMove(game models.Game, playerId int, cards []models.Card) {
 	
 	var qty = len(cards)
 
 	for i := 0; i<qty; i++{
-		game.PlayedCards.append(cards[i])
+		game.PlayedCards = append(game.PlayedCards, cards[i])
 	}
 
 	game.LastPlayedQty = qty
 	game.LastPlayerId = playerId
 }
-
