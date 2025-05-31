@@ -10,12 +10,22 @@ import (
 
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
-		// Allow all origins (for development)
+		// Allow all origin
 		return true
 	},
+	// Add buffer sizes to prevent issues
+	ReadBufferSize:  1024,
+	WriteBufferSize: 1024,
 }
 
 func handleWS(w http.ResponseWriter, r *http.Request) {
+	fmt.Println("Incoming request:", r.Method, r.URL.Path)
+
+	//cors ki bakchodi
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+	
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		fmt.Println("Upgrade error:", err)
@@ -25,10 +35,17 @@ func handleWS(w http.ResponseWriter, r *http.Request) {
 
 	var gameID string
 
+	respondJSON(conn, "connected", map[string]string{"status": "connected"});
+
 	for {
 		_, msg, err := conn.ReadMessage()
+
 		if err != nil {
-			fmt.Println("Read error:", err)
+			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+				fmt.Printf("WebSocket unexpected close error: %v", err)
+			} else {
+				fmt.Printf("WebSocket read error: %v\n", err)
+			}
 			break
 		}
 
@@ -58,10 +75,38 @@ func handleWS(w http.ResponseWriter, r *http.Request) {
 				fmt.Println("Invalid newPlayer payload:", err)
 				continue
 			}
-			addPlayerToGame(payload.GameID, payload.Player)
+			
+			// Check if game exists before adding player
+			game, _ := GetGameByID(payload.GameID)
+			if game == nil {
+				fmt.Printf("Game %s not found\n", payload.GameID)
+				respondJSON(conn, "error", map[string]string{
+					"message": "Game not found",
+				})
+				continue
+			}
+			
+			// Add player to game
+			if _,err := addPlayerToGame(payload.GameID, payload.Player); err != nil {
+				fmt.Printf("Failed to add player to game: %v\n", err)
+				respondJSON(conn, "error", map[string]string{
+					"message": "Failed to join game",
+				})
+				continue
+			}
+			
 			gameID = payload.GameID
 			manager.AddClient(gameID, conn)
-			manager.Broadcast(gameID, []byte(fmt.Sprintf("Player %s joined", payload.Player.PlayerId)))
+			
+			// Send updated game state to the new player
+			updatedGame, _ := GetGameByID(gameID)
+			respondJSON(conn, "gameJoined", updatedGame)
+			
+			// Broadcast to other players that someone joined
+			manager.Broadcast(gameID, mustMarshal("playerJoined", map[string]interface{}{
+				"player": payload.Player,
+				"game":   updatedGame,
+			}))
 
 		case "startGame":
 			var payload StartGamePayload
@@ -131,7 +176,16 @@ func mustMarshal(msgType string, payload any) []byte {
 
 func main() {
 	fmt.Println("WebSocket server started at :8080")
-	http.HandleFunc("/ws", handleWS)
+	http.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request){
+		if r.Method == "OPTIONS" {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		handleWS(w, r)
+	})
 	err := http.ListenAndServe(":8080", nil)
 	if err != nil {
 		panic(err)
