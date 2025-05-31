@@ -28,3 +28,10 @@ type MakeMovePayload struct {
 	PlayerID string        `json:"playerId"`
 	Cards    []models.Card `json:"cards"`
 }
+
+
+type WSResponse struct {
+	Type string      `json:"type"`
+	Data interface{} `json:"data,omitempty"`
+	Err  string      `json:"error,omitempty"`
+}

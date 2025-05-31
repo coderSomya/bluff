@@ -47,8 +47,7 @@ func Check(game models.Game) bool{
 	return false
 }
 
-func MakeMove(game models.Game, playerId string, cards []models.Card) {
-	
+func MakeMove(game *models.Game, playerId string, cards []models.Card){	
 	var qty = len(cards)
 
 	for i := 0; i<qty; i++{

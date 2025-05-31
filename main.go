@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"github.com/gorilla/websocket"
+	"github.com/coderSomya/bluff/utils"
 )
 
 var upgrader = websocket.Upgrader{
@@ -15,13 +16,14 @@ var upgrader = websocket.Upgrader{
 }
 
 func handleWS(w http.ResponseWriter, r *http.Request) {
-	// Upgrade initial GET request to a WebSocket connection
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		fmt.Println("Upgrade error:", err)
 		return
 	}
 	defer conn.Close()
+
+	var gameID string
 
 	for {
 		_, msg, err := conn.ReadMessage()
@@ -37,18 +39,18 @@ func handleWS(w http.ResponseWriter, r *http.Request) {
 		}
 
 		switch wsMsg.Type {
+
 		case "newGame":
 			var payload NewGamePayload
 			if err := json.Unmarshal(wsMsg.Payload, &payload); err != nil {
 				fmt.Println("Invalid newGame payload:", err)
 				continue
 			}
-			fmt.Println("New Game:", payload.Creator)
-			// Respond with confirmation
-			respondText(conn, wsMsg.Type)
+			gameID = "123"
+			newGame := createGame(payload.Creator, gameID)
+			respondJSON(conn, "newGame", newGame)
 
-			//gameid = createGame(player)
-			//send: gameid
+			manager.AddClient(gameID, conn)
 
 		case "newPlayer":
 			var payload NewPlayerPayload
@@ -56,26 +58,47 @@ func handleWS(w http.ResponseWriter, r *http.Request) {
 				fmt.Println("Invalid newPlayer payload:", err)
 				continue
 			}
-			fmt.Println("New Player:", payload.Player, "to Game ID:", payload.GameID)
-			respondText(conn, wsMsg.Type)
+			addPlayerToGame(payload.GameID, payload.Player)
+			gameID = payload.GameID
+			manager.AddClient(gameID, conn)
+			manager.Broadcast(gameID, []byte(fmt.Sprintf("Player %s joined", payload.Player.PlayerId)))
 
 		case "startGame":
 			var payload StartGamePayload
 			if err := json.Unmarshal(wsMsg.Payload, &payload); err != nil {
-				fmt.Println("Invalid startGame payload:", err)
 				continue
 			}
-			fmt.Println("Start Game:", payload.GameID)
-			respondText(conn, wsMsg.Type)
+			game := startGame(payload.GameID)
+			manager.Broadcast(payload.GameID, mustMarshal("startGame", game))
 
 		case "makeMove":
 			var payload MakeMovePayload
 			if err := json.Unmarshal(wsMsg.Payload, &payload); err != nil {
-				fmt.Println("Invalid makeMove payload:", err)
 				continue
 			}
-			fmt.Printf("Player %s played %+v in Game %s\n", payload.PlayerID, payload.Cards, payload.GameID)
-			respondText(conn, wsMsg.Type)
+			game, _ := GetGameByID(payload.GameID)
+			if game == nil {
+				fmt.Println("Game not found")
+				continue
+			}
+			utils.MakeMove(game, payload.PlayerID, payload.Cards)
+			manager.Broadcast(payload.GameID, mustMarshal("moveMade", game))
+
+		case "check":
+			var payload StartGamePayload
+			if err := json.Unmarshal(wsMsg.Payload, &payload); err != nil {
+				continue
+			}
+			result := handleCheck(payload.GameID)
+			manager.Broadcast(payload.GameID, mustMarshal("checkResult", result))
+
+		case "burn":
+			var payload StartGamePayload
+			if err := json.Unmarshal(wsMsg.Payload, &payload); err != nil {
+				continue
+			}
+			game := handleBurn(payload.GameID)
+			manager.Broadcast(payload.GameID, mustMarshal("burned", game))
 
 		default:
 			fmt.Println("Unknown message type:", wsMsg.Type)
@@ -84,10 +107,23 @@ func handleWS(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+
 func respondText(conn *websocket.Conn, msg string) {
 	if err := conn.WriteMessage(websocket.TextMessage, []byte(msg)); err != nil {
 		fmt.Println("Write error:", err)
 	}
+}
+
+func respondJSON(conn *websocket.Conn, msgType string, payload any) {
+	resp := map[string]any{"type": msgType, "payload": payload}
+	data, _ := json.Marshal(resp)
+	conn.WriteMessage(websocket.TextMessage, data)
+}
+
+func mustMarshal(msgType string, payload any) []byte {
+	resp := map[string]any{"type": msgType, "payload": payload}
+	data, _ := json.Marshal(resp)
+	return data
 }
 
 func main() {
