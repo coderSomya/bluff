@@ -17,13 +17,14 @@ func addNewGame(creator models.Player){
 	var newGame = models.Game{
 		GameId: "123",
 		Players: make([]models.Player,0),
-		CurrentPlayerId: &creator.PlayerId,
+		CurrentPlayerId: nil,
 		PlayedCards: make([]models.Card,0),
 		LastPlayerId: nil,
 		LastPlayedQty: nil,
 		MoveCard: nil,
 	}
 	newGame.Players = append(newGame.Players, creator)
+	newGame.CurrentPlayerId = &creator.PlayerId
 	gameManager.AddGame(newGame)
 }
 

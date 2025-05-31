@@ -47,6 +47,9 @@ func handleWS(w http.ResponseWriter, r *http.Request) {
 			// Respond with confirmation
 			respondText(conn, wsMsg.Type)
 
+			//gameid = createGame(player)
+			//send: gameid
+
 		case "newPlayer":
 			var payload NewPlayerPayload
 			if err := json.Unmarshal(wsMsg.Payload, &payload); err != nil {
