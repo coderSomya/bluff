@@ -1,13 +1,17 @@
 package models
 
+type GameManager struct{
+	games []Game
+}
+
 type Game struct {
     GameId  string
     Players []Player
-	CurrentPlayerId int
+	CurrentPlayerId *string
 	PlayedCards []Card
-	LastPlayerId int
-	LastPlayedQty int
-	MoveCard Card
+	LastPlayerId *int
+	LastPlayedQty *int
+	MoveCard *Card
 }
 
 type Player struct {
