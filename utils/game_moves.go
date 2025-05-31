@@ -28,25 +28,54 @@ func IsBurnPossible(game models.Game) bool{
 	return false
 }
 
-func Check(game models.Game) bool{
-	if game.CurrentPlayerId == game.LastPlayerId {
-		return false
+func Check(game *models.Game, checkerId string) (bool, error) {
+	if game.LastPlayerId == nil || game.LastPlayedQty == nil {
+		return false, fmt.Errorf("no previous move to check")
 	}
 
-	if len(game.PlayedCards) == 0 {
-		return false
+	lastPlayerId := *game.LastPlayerId
+	qty := *game.LastPlayedQty
+
+	if qty > len(game.PlayedCards) {
+		return false, fmt.Errorf("invalid state: more cards played than exist")
 	}
 
-	var qty = game.LastPlayedQty //itne cards dekhne hain
+	startIdx := len(game.PlayedCards) - qty
+	lastPlayed := game.PlayedCards[startIdx:]
 
-	for i := len(game.PlayedCards) - 1; i >= *qty; i-- {
-		if game.PlayedCards[i]!= *game.MoveCard && game.PlayedCards[i].Value != models.Joker {
-			return true
+	moveCard := game.MoveCard
+	if moveCard == nil {
+		return false, fmt.Errorf("no move card to check against")
+	}
+
+	bluffed := false
+	for _, card := range lastPlayed {
+		if card.Value != moveCard.Value && card.Value != models.Joker {
+			bluffed = true
+			break
 		}
 	}
 
-	return false
+	receiverId := checkerId
+	if bluffed {
+		receiverId = lastPlayerId
+	}
+
+	for i := range game.Players {
+		if game.Players[i].PlayerId == receiverId {
+			game.Players[i].Cards = append(game.Players[i].Cards, game.PlayedCards...)
+			break
+		}
+	}
+
+	game.PlayedCards = []models.Card{}
+	game.LastPlayerId = nil
+	game.LastPlayedQty = nil
+	game.MoveCard = nil
+
+	return !bluffed, nil // true = honest move, false = bluff
 }
+
 
 func MakeMove(game *models.Game, playerId string, cards []models.Card) error {
 	playerIndex := -1
@@ -108,18 +137,6 @@ func MakeMove(game *models.Game, playerId string, cards []models.Card) error {
 
 	return nil
 }
-
-/*
-type Game struct {
-    GameId  string
-    Players []Player
-	CurrentPlayerId *string
-	PlayedCards []Card
-	LastPlayerId *string
-	LastPlayedQty *int
-	MoveCard *Card
-}
-*/
 
 func Pass(game *models.Game){
 	var currentPlayerId = game.CurrentPlayerId;

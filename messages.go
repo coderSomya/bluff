@@ -23,6 +23,11 @@ type StartGamePayload struct {
 	GameID string `json:"gameId"`
 }
 
+type CheckPayload struct {
+	GameID string `json:"gameId"`
+	CheckerId string `json:"checker"`
+}
+
 type MakeMovePayload struct {
 	GameID   string        `json:"gameId"`
 	PlayerID string        `json:"playerId"`

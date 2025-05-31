@@ -88,11 +88,11 @@ func handleWS(w http.ResponseWriter, r *http.Request) {
 			manager.Broadcast(payload.GameID, mustMarshal("moveMade", game))
 
 		case "check":
-			var payload StartGamePayload
+			var payload CheckPayload
 			if err := json.Unmarshal(wsMsg.Payload, &payload); err != nil {
 				continue
 			}
-			result := handleCheck(payload.GameID)
+			result := handleCheck(payload.GameID, payload.CheckerId)
 			manager.Broadcast(payload.GameID, mustMarshal("checkResult", result))
 
 		case "burn":

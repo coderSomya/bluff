@@ -50,12 +50,20 @@ func addPlayerToGame(gameId string, player models.Player) (*models.Game, error){
 	return nil, fmt.Errorf("game not found: %s", gameId)
 }
 
-func handleCheck(gameID string) map[string]any {
+func handleCheck(gameID string, checkerId string) map[string]any {
 	for _, game := range gameManager.Games {
 		if game.GameId == gameID {
-			result := utils.Check(game)
+			ok, err := utils.Check(&game, checkerId)
+			if err != nil {
+				// TODO: return error to client
+			}
+			if ok {
+				// TODO: inform that move was honest, checker takes cards
+			} else {
+				// TODO: inform that move was a bluff, last player takes cards
+			}
 			return map[string]any{
-				"result": result,
+				"result": ok,
 			}
 		}
 	}
