@@ -1,7 +1,11 @@
 package models
 
 type GameManager struct{
-	games []Game
+	Games []Game
+}
+
+func (gm *GameManager) AddGame(game Game) {
+	gm.Games = append(gm.Games, game)
 }
 
 type Game struct {
@@ -9,7 +13,7 @@ type Game struct {
     Players []Player
 	CurrentPlayerId *string
 	PlayedCards []Card
-	LastPlayerId *int
+	LastPlayerId *string
 	LastPlayedQty *int
 	MoveCard *Card
 }

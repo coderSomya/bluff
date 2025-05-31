@@ -38,8 +38,8 @@ func Check(game models.Game) bool{
 
 	var qty = game.LastPlayedQty //itne cards dekhne hain
 
-	for i := len(game.PlayedCards) - 1; i >= qty; i-- {
-		if game.PlayedCards[i]!=game.MoveCard && game.PlayedCards[i].Value != models.Joker {
+	for i := len(game.PlayedCards) - 1; i >= *qty; i-- {
+		if game.PlayedCards[i]!= *game.MoveCard && game.PlayedCards[i].Value != models.Joker {
 			return true
 		}
 	}
@@ -47,7 +47,7 @@ func Check(game models.Game) bool{
 	return false
 }
 
-func MakeMove(game models.Game, playerId int, cards []models.Card) {
+func MakeMove(game models.Game, playerId string, cards []models.Card) {
 	
 	var qty = len(cards)
 
@@ -55,6 +55,6 @@ func MakeMove(game models.Game, playerId int, cards []models.Card) {
 		game.PlayedCards = append(game.PlayedCards, cards[i])
 	}
 
-	game.LastPlayedQty = qty
-	game.LastPlayerId = playerId
+	game.LastPlayedQty = &qty
+	game.LastPlayerId = &playerId
 }
