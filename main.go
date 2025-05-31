@@ -81,7 +81,10 @@ func handleWS(w http.ResponseWriter, r *http.Request) {
 				fmt.Println("Game not found")
 				continue
 			}
-			utils.MakeMove(game, payload.PlayerID, payload.Cards)
+			if err := utils.MakeMove(game, payload.PlayerID, payload.Cards); err != nil {
+				fmt.Println("Invalid move:", err)
+				//TODO: we should notify the user back also r
+			}			
 			manager.Broadcast(payload.GameID, mustMarshal("moveMade", game))
 
 		case "check":

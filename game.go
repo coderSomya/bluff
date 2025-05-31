@@ -87,8 +87,27 @@ func createGame(creator models.Player, gameID string) models.Game {
 func startGame(gameID string) models.Game {
 	for i, game := range gameManager.Games {
 		if game.GameId == gameID {
+			numPlayers := len(game.Players)
+			if numPlayers == 0 {
+				fmt.Println("No players in game")
+				return game
+			}
+
+			// Randomly distribute kardo deck
+			hands := utils.RandomizeDeck(numPlayers)
+
+			for j := 0; j < numPlayers; j++ {
+				gameManager.Games[i].Players[j].Cards = hands[j]
+			}
+
+			// basically creator will be first guy to make a move
+			firstPlayerID := gameManager.Games[i].Players[0].PlayerId
+			gameManager.Games[i].CurrentPlayerId = &firstPlayerID
+
+			fmt.Printf("Game %s started with %d players\n", gameID, numPlayers)
 			return gameManager.Games[i]
 		}
 	}
 	return models.Game{}
 }
+
