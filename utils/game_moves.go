@@ -29,6 +29,7 @@ func IsBurnPossible(game models.Game) bool{
 }
 
 func Check(game *models.Game, checkerId string) (bool, error) {
+	
 	if game.LastPlayerId == nil || game.LastPlayedQty == nil {
 		return false, fmt.Errorf("no previous move to check")
 	}
@@ -90,6 +91,11 @@ func MakeMove(game *models.Game, playerId string, cards []models.Card) error {
 		return fmt.Errorf("player with id %s not found in game", playerId)
 	}
 
+	if game.CurrentPlayerId == nil || *game.CurrentPlayerId != playerId {
+        return fmt.Errorf("not player's turn")
+    }
+    
+
 	playerCards := game.Players[playerIndex].Cards
 	playedCardsMap := make(map[string]int)
 
@@ -128,12 +134,13 @@ func MakeMove(game *models.Game, playerId string, cards []models.Card) error {
 
 	game.Players[playerIndex].Cards = remaining
 
-	for _, card := range cards {
-		game.PlayedCards = append(game.PlayedCards, card)
-	}
+	game.PlayedCards = append(game.PlayedCards, cards...)
+	
 	qty := len(cards)
 	game.LastPlayedQty = &qty
 	game.LastPlayerId = &playerId
+
+	Pass(game)  // This will update CurrentPlayerId
 
 	return nil
 }

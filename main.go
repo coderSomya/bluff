@@ -4,8 +4,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"github.com/gorilla/websocket"
+
+	"github.com/coderSomya/bluff/models"
 	"github.com/coderSomya/bluff/utils"
+	"github.com/gorilla/websocket"
 )
 
 var upgrader = websocket.Upgrader{
@@ -31,9 +33,13 @@ func handleWS(w http.ResponseWriter, r *http.Request) {
 		fmt.Println("Upgrade error:", err)
 		return
 	}
-	defer conn.Close()
+	defer func() {
+		manager.RemoveClient(conn) // Clean up on disconnect
+		conn.Close()
+	}()
 
 	var gameID string
+	var playerID string // Track current player
 
 	respondJSON(conn, "connected", map[string]string{"status": "connected"});
 
@@ -67,7 +73,7 @@ func handleWS(w http.ResponseWriter, r *http.Request) {
 			newGame := createGame(payload.Creator, gameID)
 			respondJSON(conn, "newGame", newGame)
 
-			manager.AddClient(gameID, conn)
+			manager.AddClient(gameID, conn, playerID)
 
 		case "newPlayer":
 			var payload NewPlayerPayload
@@ -96,17 +102,16 @@ func handleWS(w http.ResponseWriter, r *http.Request) {
 			}
 			
 			gameID = payload.GameID
-			manager.AddClient(gameID, conn)
+			playerID = payload.Player.PlayerId
+
+			manager.AddClient(gameID, conn, playerID)
 			
-			// Send updated game state to the new player
+			// Send personalized game state to all players
 			updatedGame, _ := GetGameByID(gameID)
-			respondJSON(conn, "gameJoined", updatedGame)
-			
-			// Broadcast to other players that someone joined
-			manager.Broadcast(gameID, mustMarshal("playerJoined", map[string]interface{}{
-				"player": payload.Player,
-				"game":   updatedGame,
-			}))
+			broadcastPersonalizedGameState(gameID, updatedGame, "playerJoined", map[string]interface{}{
+				"newPlayer": payload.Player.Name,
+				"message": fmt.Sprintf("%s joined the game", payload.Player.Name),
+			})
 
 		case "startGame":
 			var payload StartGamePayload
@@ -121,38 +126,172 @@ func handleWS(w http.ResponseWriter, r *http.Request) {
 			if err := json.Unmarshal(wsMsg.Payload, &payload); err != nil {
 				continue
 			}
+			
 			game, _ := GetGameByID(payload.GameID)
 			if game == nil {
-				fmt.Println("Game not found")
+				respondJSON(conn, "error", map[string]string{"message": "Game not found"})
 				continue
 			}
+			
 			if err := utils.MakeMove(game, payload.PlayerID, payload.Cards); err != nil {
-				fmt.Println("Invalid move:", err)
-				//TODO: we should notify the user back also r
-			}			
-			manager.Broadcast(payload.GameID, mustMarshal("moveMade", game))
+				respondJSON(conn, "error", map[string]string{"message": err.Error()})
+				continue
+			}
+			
+			// Broadcast personalized game state
+			eventData := map[string]interface{}{
+				"action": "move",
+				"playerId": payload.PlayerID,
+				"cardCount": len(payload.Cards),
+				"claimedCard": game.MoveCard,
+				"message": fmt.Sprintf("Player %s played %d cards", payload.PlayerID, len(payload.Cards)),
+			}
+			
+			broadcastPersonalizedGameState(payload.GameID, game, "moveMade", eventData)
 
 		case "check":
 			var payload CheckPayload
 			if err := json.Unmarshal(wsMsg.Payload, &payload); err != nil {
 				continue
 			}
-			result := handleCheck(payload.GameID, payload.CheckerId)
-			manager.Broadcast(payload.GameID, mustMarshal("checkResult", result))
+			
+			game, _ := GetGameByID(payload.GameID)
+			if game == nil {
+				respondJSON(conn, "error", map[string]string{"message": "Game not found"})
+				continue
+			}
+			
+			// Capture state before check
+			lastPlayer := ""
+			if game.LastPlayerId != nil {
+				lastPlayer = *game.LastPlayerId
+			}
+			cardsInPile := len(game.PlayedCards)
+			
+			// Perform the check
+			wasHonest, err := utils.Check(game, payload.CheckerId)
+			if err != nil {
+				respondJSON(conn, "error", map[string]string{"message": err.Error()})
+				continue
+			}
+			
+			// Create event data
+			eventData := map[string]interface{}{
+				"checker": payload.CheckerId,
+				"checkedPlayer": lastPlayer,
+				"wasBluff": !wasHonest,
+				"cardsTransferred": cardsInPile,
+			}
+			
+			if wasHonest {
+				eventData["result"] = fmt.Sprintf("%s was honest! %s takes the cards", lastPlayer, payload.CheckerId)
+			} else {
+				eventData["result"] = fmt.Sprintf("%s was bluffing! %s takes the cards", lastPlayer, lastPlayer)
+			}
+			
+			// Broadcast personalized updates
+			broadcastPersonalizedGameState(payload.GameID, game, "checkResult", eventData)
 
 		case "burn":
 			var payload StartGamePayload
 			if err := json.Unmarshal(wsMsg.Payload, &payload); err != nil {
 				continue
 			}
-			game := handleBurn(payload.GameID)
-			manager.Broadcast(payload.GameID, mustMarshal("burned", game))
+			
+			game, _ := GetGameByID(payload.GameID)
+			if game == nil {
+				respondJSON(conn, "error", map[string]string{"message": "Game not found"})
+				continue
+			}
+			
+			// Validate burn is possible
+			if !utils.IsBurnPossible(*game) {
+				respondJSON(conn, "error", map[string]string{
+					"message": "Burn not possible - you must be the last player who made a move",
+				})
+				continue
+			}
+			
+			// Get current player (who's trying to burn)
+			burnerID := manager.GetPlayerID(conn)
+			if burnerID == "" {
+				respondJSON(conn, "error", map[string]string{"message": "Player not found"})
+				continue
+			}
+			
+			// Capture cards before burn
+			cardsBurned := len(game.PlayedCards)
+			
+			// Perform burn
+			*game = handleBurn(payload.GameID)
+			
+			// Create event data
+			eventData := map[string]interface{}{
+				"burner": burnerID,
+				"cardsBurned": cardsBurned,
+				"message": fmt.Sprintf("Player %s burned the pile!", burnerID),
+			}
+			
+			// Broadcast personalized updates
+			broadcastPersonalizedGameState(payload.GameID, game, "burned", eventData)
 
 		default:
 			fmt.Println("Unknown message type:", wsMsg.Type)
 			respondText(conn, "unknown")
 		}
 	}
+}
+
+// Create a safe game state for a specific player
+func createPlayerGameState(game *models.Game, forPlayerID string) map[string]interface{} {
+	playerCards := []models.Card{}
+	
+	// Find this player's cards
+	for _, player := range game.Players {
+		if player.PlayerId == forPlayerID {
+			playerCards = player.Cards
+			break
+		}
+	}
+	
+	// Create safe player list (without cards)
+	safePlayers := make([]map[string]interface{}, len(game.Players))
+	for i, player := range game.Players {
+		safePlayers[i] = map[string]interface{}{
+			"playerId": player.PlayerId,
+			"name": player.Name,
+			"cardCount": len(player.Cards),
+		}
+	}
+	
+	return map[string]interface{}{
+		"gameId": game.GameId,
+		"players": safePlayers,
+		"yourCards": playerCards,
+		"currentPlayerId": game.CurrentPlayerId,
+		"playedCardsCount": len(game.PlayedCards),
+		"lastPlayerId": game.LastPlayerId,
+		"lastPlayedQty": game.LastPlayedQty,
+		"moveCard": game.MoveCard,
+	}
+}
+
+// Broadcast personalized messages to all players in a game
+func broadcastPersonalizedGameState(gameID string, game *models.Game, eventType string, eventData map[string]interface{}) {
+	manager.BroadcastPersonalized(gameID, func(playerID string) []byte {
+		safeGameState := createPlayerGameState(game, playerID)
+		
+		response := map[string]interface{}{
+			"type": eventType,
+			"payload": map[string]interface{}{
+				"game": safeGameState,
+				"event": eventData,
+			},
+		}
+		
+		data, _ := json.Marshal(response)
+		return data
+	})
 }
 
 
@@ -191,3 +330,5 @@ func main() {
 		panic(err)
 	}
 }
+
+
